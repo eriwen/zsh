@@ -7,7 +7,7 @@ local -a gradle_group_tasks gradle_all_tasks
 
 # Set the caching policy to invalidate cache if the build file is newer than the cache.
 _gradle_caching_policy() {
-    [[ $gradle_buildfile -nt $1 ]]
+    [[ $gradle_buildfile -nt $1 || $gradle_settingsfile -nt $1 ]]
 }
 
 zstyle -s ":completion:*:*:$service:*" cache-policy cache_policy || \
@@ -41,7 +41,7 @@ _arguments -C \
     '--include-build[Includes the specified build in the composite.]:project directory:_directories' \
     {-I,--init-script}'[Specifies an initialization script.]:init script:_files -g "*.gradle(-.)"' \
     '(-d --debug -q --quiet)'{-i,--info}'[Set log level to info.]' \
-		'--max-workers[Set the maximum number of concurrent workers that Gradle may use.]:number workers:-># processors' \
+    '--max-workers[Set the maximum number of concurrent workers that Gradle may use.]:number workers:-># processors' \
     {-m,--dry-run}'[Runs the builds with all task actions disabled.]' \
     '--no-color[Do not use color in the console output. (Removed in Gradle 3.0)]' \
     '(--daemon)--no-daemon[Do not use the Gradle daemon to run the build.]' \
@@ -69,10 +69,16 @@ _arguments -C \
 
 if [[ $words[CURRENT] != -* ]]; then
     if [[ $gradle_inspect == yes ]]; then
-        # If a build file is specified after '-b' or '--build-file', use this file. Otherwise,
-        # default is the file 'build.gradle' in the current directory.
-        local gradle_buildfile=${${(v)opt_args[(i)-b|--build-file]}:-build.gradle}
+        # Look for default build script in the settings file (settings.gradle by default)
+        # Otherwise, default is the file 'build.gradle' in the current directory.
+        local gradle_settingsfile=${${(v)opt_args[(i)-c|--settings-file]}:-settings.gradle}
+        if [[ -f $gradle_settingsfile ]]; then
+            local default_gradle_buildfile=${$(grep "^rootProject\.buildFileName" $gradle_settingsfile | \
+                sed -n -e "s/rootProject\.buildFileName = [\'\"]\(.*\)[\'\"]/\1/p"):-build.gradle}
+        fi
 
+        # If a build file is specified after '-b' or '--build-file', use this file.
+        local gradle_buildfile=${${(v)opt_args[(i)-b|--build-file]}:-$default_gradle_buildfile}
         if [[ -f $gradle_buildfile ]]; then
             # Cache name is constructed from the absolute path of the build file.
             local cache_name=${${gradle_buildfile:a}//[^[:alnum:]]/_}
